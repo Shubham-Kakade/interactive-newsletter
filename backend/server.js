@@ -4,7 +4,7 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-const fs = require('fs').promises; // <-- ADDED THIS LINE TO FIX THE ERROR
+const fs = require('fs').promises;
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const nodemailer = require('nodemailer');
 require('dotenv').config(); // Used for local testing, but hosting provider will use its own env variables.
@@ -16,14 +16,10 @@ const port = process.env.PORT || 3000;
 
 // --- Middleware ---
 app.use(cors()); // Enable Cross-Origin Resource Sharing
-app.use(express.json()); // Enable parsing of JSON request bodies
-
-// Serve the frontend static files (HTML, CSS, JS)
-// This tells Express to serve the index.html file from the 'frontend' folder
-app.use(express.static(path.join(__dirname, '../frontend')));
+app.use(express.json({ limit: '5mb' })); // Enable parsing of JSON request bodies, with a larger limit for HTML content
+app.use(express.static(path.join(__dirname, '../frontend'))); // Serve the frontend
 
 // --- API Configuration ---
-// Read credentials from environment variables
 const apiKey = process.env.GEMINI_API_KEY;
 const smtpHost = process.env.SMTP_HOST;
 const smtpPort = process.env.SMTP_PORT;
@@ -50,16 +46,12 @@ const transporter = (smtpHost && smtpUser && smtpPass) ? nodemailer.createTransp
  * @description Receives a prompt, calls Gemini, and returns news items.
  */
 app.post('/api/generate-news', async (req, res) => {
-    if (!genAI) {
-        return res.status(500).json({ error: 'Gemini API not configured on the server.' });
-    }
-
+    if (!genAI) return res.status(500).json({ error: 'Gemini API not configured on the server.' });
+    
     const { prompt } = req.body;
-    if (!prompt) {
-        return res.status(400).json({ error: 'Prompt is required.' });
-    }
+    if (!prompt) return res.status(400).json({ error: 'Prompt is required.' });
+    
     console.log(`Received prompt: "${prompt}"`);
-
     try {
         const generationPrompt = `
             Based on the topic "${prompt}", generate a list of 5 to 7 important and current trends.
@@ -79,22 +71,15 @@ app.post('/api/generate-news', async (req, res) => {
 });
 
 /**
- * @route POST /api/create-newsletter
- * @description Receives selected news items, builds the HTML, and sends the email.
+ * @route POST /api/preview-newsletter
+ * @description Receives selected news items and returns the generated HTML for preview.
  */
-app.post('/api/create-newsletter', async (req, res) => {
-    if (!transporter) {
-        return res.status(500).json({ error: 'Email service not configured on the server.' });
-    }
-    if (!recipientEmails) {
-        return res.status(500).json({ error: 'No recipient emails configured on the server.' });
-    }
-
+app.post('/api/preview-newsletter', async (req, res) => {
     const { selectedItems } = req.body;
     if (!selectedItems || selectedItems.length === 0) {
         return res.status(400).json({ error: 'At least one news item must be selected.' });
     }
-    console.log(`Creating and sending newsletter with ${selectedItems.length} items.`);
+    console.log(`Generating preview with ${selectedItems.length} items.`);
 
     try {
         const templatePath = path.join(__dirname, 'newsletter-template.html');
@@ -108,22 +93,46 @@ app.post('/api/create-newsletter', async (req, res) => {
         }).join('');
         
         const finalHtml = template.replace('{{NEWS_ITEMS_PLACEHOLDER}}', newsHtml);
+        res.json({ previewHtml: finalHtml });
 
+    } catch (error) {
+        console.error("Error creating preview:", error);
+        res.status(500).json({ error: 'Failed to create the newsletter preview.' });
+    }
+});
+
+
+/**
+ * @route POST /api/send-newsletter
+ * @description Receives the final HTML content and sends the email.
+ */
+app.post('/api/send-newsletter', async (req, res) => {
+    if (!transporter) return res.status(500).json({ error: 'Email service not configured on the server.' });
+    if (!recipientEmails) return res.status(500).json({ error: 'No recipient emails configured on the server.' });
+
+    const { htmlContent } = req.body;
+    if (!htmlContent) {
+        return res.status(400).json({ error: 'HTML content is required to send an email.' });
+    }
+    console.log(`Sending final newsletter to recipients...`);
+
+    try {
         await transporter.sendMail({
             from: `"AI Weekly Roundup" <${smtpUser}>`,
             to: recipientEmails,
             subject: 'Your AI Weekly Roundup!',
-            html: finalHtml,
+            html: htmlContent,
         });
 
         console.log("Newsletter sent successfully!");
-        res.json({ message: 'Newsletter sent successfully!', preview: finalHtml });
+        res.json({ message: 'Newsletter sent successfully!' });
 
     } catch (error) {
-        console.error("Error creating or sending newsletter:", error);
-        res.status(500).json({ error: 'Failed to create or send the newsletter.' });
+        console.error("Error sending newsletter:", error);
+        res.status(500).json({ error: 'Failed to send the newsletter.' });
     }
 });
+
 
 // --- Server Start ---
 app.listen(port, () => {
