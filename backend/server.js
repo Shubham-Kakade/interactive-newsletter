@@ -4,6 +4,7 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs').promises; // <-- ADDED THIS LINE TO FIX THE ERROR
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const nodemailer = require('nodemailer');
 require('dotenv').config(); // Used for local testing, but hosting provider will use its own env variables.
