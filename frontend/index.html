@@ -9,7 +9,7 @@
         :root {
             --primary-color: #1E3A8A; --secondary-color: #4A90E2; --background-color: #f0f2f5;
             --container-bg: #ffffff; --text-color: #333; --border-color: #e0e0e0;
-            --success-color: #28a745; --error-color: #dc3545;
+            --success-color: #28a745; --error-color: #dc3545; --warning-color: #ffc107;
         }
         body { font-family: 'Inter', sans-serif; background-color: var(--background-color); color: var(--text-color); margin: 0; padding: 20px; }
         .container { max-width: 800px; margin: 20px auto; background-color: var(--container-bg); padding: 30px 40px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08); }
@@ -18,8 +18,9 @@
         #prompt-input { flex-grow: 1; padding: 12px 15px; border: 1px solid var(--border-color); border-radius: 8px; font-size: 16px; }
         .btn { padding: 12px 20px; border: none; border-radius: 8px; font-size: 16px; font-weight: 500; cursor: pointer; transition: background-color 0.3s; }
         .btn-primary { background-color: var(--secondary-color); color: white; }
-        .btn-success { background-color: var(--success-color); color: white; width: 100%; margin-top: 20px; }
-        .btn:disabled { background-color: #a0c7ef; cursor: not-allowed; }
+        .btn-secondary { background-color: var(--warning-color); color: black; width: 100%; margin-top: 20px; }
+        .btn-success { background-color: var(--success-color); color: white; width: 100%; margin-top: 10px; }
+        .btn:disabled { background-color: #cccccc; color: #666666; cursor: not-allowed; }
         #news-list { list-style-type: none; padding: 0; margin-top: 20px; }
         .news-item { display: flex; align-items: flex-start; padding: 15px; border: 1px solid var(--border-color); border-radius: 8px; margin-bottom: 12px; }
         .news-item input[type="checkbox"] { margin-right: 15px; margin-top: 5px; width: 18px; height: 18px; cursor: pointer; flex-shrink: 0; }
@@ -41,26 +42,30 @@
             <button id="generate-btn" class="btn btn-primary">Generate News</button>
         </div>
         <div id="loader" class="loader">Generating news...</div>
-        <form id="newsletter-form">
+        <div id="news-selection-section" style="display: none;">
             <ul id="news-list"></ul>
-            <button type="submit" id="preview-btn" class="btn btn-success" disabled>Preview & Send Newsletter</button>
-        </form>
+            <button id="preview-btn" class="btn btn-secondary">Generate Preview</button>
+        </div>
         <div id="status-message" class="status-message"></div>
         <div id="preview-section">
             <h2>Newsletter Preview</h2>
             <iframe id="preview-iframe" title="Newsletter Preview"></iframe>
+            <button id="send-btn" class="btn btn-success">Looks Good, Send Email</button>
         </div>
     </div>
     <script>
         const promptInput = document.getElementById('prompt-input');
         const generateBtn = document.getElementById('generate-btn');
-        const newsletterForm = document.getElementById('newsletter-form');
+        const newsSelectionSection = document.getElementById('news-selection-section');
         const newsList = document.getElementById('news-list');
         const previewBtn = document.getElementById('preview-btn');
+        const sendBtn = document.getElementById('send-btn');
         const loader = document.getElementById('loader');
         const statusMessage = document.getElementById('status-message');
         const previewSection = document.getElementById('preview-section');
         const previewIframe = document.getElementById('preview-iframe');
+
+        let finalHtmlContent = ''; // Variable to store the generated HTML
 
         function showStatus(message, type = 'info') {
             statusMessage.textContent = message;
@@ -73,7 +78,8 @@
             loader.style.display = isLoading ? 'block' : 'none';
             loader.textContent = text;
             generateBtn.disabled = isLoading;
-            previewBtn.disabled = isLoading || newsList.children.length === 0;
+            previewBtn.disabled = isLoading;
+            sendBtn.disabled = isLoading;
         }
 
         generateBtn.addEventListener('click', async () => {
@@ -85,6 +91,7 @@
             setLoading(true, "Generating news from AI...");
             newsList.innerHTML = '';
             previewSection.style.display = 'none';
+            newsSelectionSection.style.display = 'none';
             statusMessage.style.display = 'none';
 
             try {
@@ -102,9 +109,11 @@
                 data.newsItems.forEach((item, index) => {
                     const li = document.createElement('li');
                     li.className = 'news-item';
-                    const itemJSON = JSON.stringify(item);
+                    // *** FIX: Store the JSON data safely in a data attribute ***
+                    li.dataset.itemJson = JSON.stringify(item);
+                    
                     li.innerHTML = `
-                        <input type="checkbox" id="item-${index}" name="news" value='${itemJSON.replace(/'/g, "&apos;")}' checked>
+                        <input type="checkbox" id="item-${index}" name="news" checked>
                         <label for="item-${index}" class="news-content">
                             <div class="headline">${item.headline}</div>
                             <div class="summary">${item.summary}</div>
@@ -112,46 +121,66 @@
                     `;
                     newsList.appendChild(li);
                 });
-                previewBtn.disabled = data.newsItems.length === 0;
+                newsSelectionSection.style.display = 'block';
             } catch (error) {
                 showStatus(`Error: ${error.message}`, 'error');
-                previewBtn.disabled = true;
             } finally {
                 setLoading(false);
             }
         });
-        
-        newsletterForm.addEventListener('submit', async (event) => {
-            event.preventDefault();
+
+        previewBtn.addEventListener('click', async () => {
             const selectedCheckboxes = document.querySelectorAll('input[name="news"]:checked');
             if (selectedCheckboxes.length === 0) {
                 showStatus('Please select at least one news item.', 'error');
                 return;
             }
-
-            const selectedItems = Array.from(selectedCheckboxes).map(cb => JSON.parse(cb.value.replace(/&apos;/g, "'")));
+            // *** FIX: Retrieve the data from the parent <li> element's dataset ***
+            const selectedItems = Array.from(selectedCheckboxes).map(cb => JSON.parse(cb.closest('li').dataset.itemJson));
             
-            setLoading(true, "Building preview and sending email...");
+            setLoading(true, "Generating preview...");
             statusMessage.style.display = 'none';
 
             try {
-                const response = await fetch('/api/create-newsletter', {
+                const response = await fetch('/api/preview-newsletter', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ selectedItems }),
                 });
-
                 if (!response.ok) {
                     const errorData = await response.json();
                     throw new Error(errorData.error || 'An unknown server error occurred.');
                 }
-
                 const result = await response.json();
                 
-                // Display the preview
-                previewIframe.srcdoc = result.preview;
+                finalHtmlContent = result.previewHtml; // Store the HTML
+                previewIframe.srcdoc = finalHtmlContent;
                 previewSection.style.display = 'block';
-                
+                showStatus('Preview generated successfully.', 'success');
+            } catch (error) {
+                showStatus(`Error: ${error.message}`, 'error');
+            } finally {
+                setLoading(false);
+            }
+        });
+        
+        sendBtn.addEventListener('click', async () => {
+            if (!finalHtmlContent) {
+                showStatus('Please generate a preview first.', 'error');
+                return;
+            }
+            setLoading(true, "Sending email...");
+            try {
+                const response = await fetch('/api/send-newsletter', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ htmlContent: finalHtmlContent }),
+                });
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'An unknown server error occurred.');
+                }
+                const result = await response.json();
                 showStatus(result.message, 'success');
             } catch (error) {
                 showStatus(`Error: ${error.message}`, 'error');
