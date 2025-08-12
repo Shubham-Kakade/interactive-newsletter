@@ -54,7 +54,7 @@ app.post('/api/generate-news', async (req, res) => {
     console.log(`Received prompt: "${prompt}"`);
     try {
         const generationPrompt = `
-            Based on the topic "${prompt}", generate a list of 5 to 7 important and current trends.
+            Based on the topic "${prompt}", generate a list of 15 to 20 important and current trends.
             For each trend, provide a concise, engaging headline and a short summary (1-2 sentences).
             Return the result as a valid JSON array of objects, where each object has a "headline" and a "summary" key.
         `;
