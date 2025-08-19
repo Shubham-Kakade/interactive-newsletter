@@ -1,5 +1,5 @@
 // backend/server.js
-// This is a live Express server that serves a frontend and handles API requests.
+// This version is updated to generate HTML matching the new newsletter template.
 
 const express = require('express');
 const cors = require('cors');
@@ -7,17 +7,23 @@ const path = require('path');
 const fs = require('fs').promises;
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const nodemailer = require('nodemailer');
-require('dotenv').config(); // Used for local testing, but hosting provider will use its own env variables.
+require('dotenv').config();
 
-// --- Initialization ---
 const app = express();
-// Use the PORT environment variable provided by the hosting service, or 3000 for local testing.
 const port = process.env.PORT || 3000;
 
+// --- Predefined Recipient Lists ---
+const RECIPIENT_LISTS = {
+    "marketing-team": "marketing-head@mphasis.com,seo-specialist@mphasis.com",
+    "all-employees": "all-staff@mphasis.com,hr-updates@mphasis.com",
+    "tech-leads": "lead-dev@mphasis.com,architect@mphasis.com",
+    "testing-only": process.env.SMTP_USER
+};
+
 // --- Middleware ---
-app.use(cors()); // Enable Cross-Origin Resource Sharing
-app.use(express.json({ limit: '5mb' })); // Enable parsing of JSON request bodies, with a larger limit for HTML content
-app.use(express.static(path.join(__dirname, '../frontend'))); // Serve the frontend
+app.use(cors());
+app.use(express.json({ limit: '5mb' }));
+app.use(express.static(path.join(__dirname, '../frontend')));
 
 // --- API Configuration ---
 const apiKey = process.env.GEMINI_API_KEY;
@@ -25,96 +31,81 @@ const smtpHost = process.env.SMTP_HOST;
 const smtpPort = process.env.SMTP_PORT;
 const smtpUser = process.env.SMTP_USER;
 const smtpPass = process.env.SMTP_PASS;
-const recipientEmails = process.env.RECIPIENT_EMAILS;
 
-// --- Main Application Logic ---
 const genAI = apiKey ? new GoogleGenerativeAI(apiKey) : null;
 const model = genAI ? genAI.getGenerativeModel({ model: "gemini-1.5-flash" }) : null;
-
 const transporter = (smtpHost && smtpUser && smtpPass) ? nodemailer.createTransport({
-    host: smtpHost,
-    port: smtpPort,
-    secure: smtpPort == 465,
-    auth: { user: smtpUser, pass: smtpPass },
+    host: smtpHost, port: smtpPort, secure: smtpPort == 465, auth: { user: smtpUser, pass: smtpPass },
 }) : null;
-
 
 // --- API Routes ---
 
-/**
- * @route POST /api/generate-news
- * @description Receives a prompt, calls Gemini, and returns news items.
- */
+app.get('/api/recipient-groups', (req, res) => {
+    const groupNames = Object.keys(RECIPIENT_LISTS);
+    res.json({ recipientGroups: groupNames });
+});
+
 app.post('/api/generate-news', async (req, res) => {
-    if (!genAI) return res.status(500).json({ error: 'Gemini API not configured on the server.' });
-    
+    if (!genAI) return res.status(500).json({ error: 'Gemini API not configured.' });
     const { prompt } = req.body;
     if (!prompt) return res.status(400).json({ error: 'Prompt is required.' });
     
-    console.log(`Received prompt: "${prompt}"`);
     try {
-        const generationPrompt = `
-            Based on the topic "${prompt}", generate a list of 15 to 20 important and current trends.
-            For each trend, provide a concise, engaging headline and a short summary (1-2 sentences).
-            Return the result as a valid JSON array of objects, where each object has a "headline" and a "summary" key.
-        `;
+        const generationPrompt = `Based on "${prompt}", generate 5-7 important trends as a JSON array of objects with "headline" and "summary" keys.`;
         const result = await model.generateContent(generationPrompt);
-        const response = await result.response;
-        const text = response.text();
+        const text = await result.response.text();
         const jsonString = text.replace(/```json|```/g, '').trim();
-        const newsItems = JSON.parse(jsonString);
-        res.json({ newsItems });
+        res.json({ newsItems: JSON.parse(jsonString) });
     } catch (error) {
-        console.error("Error generating news from Gemini:", error);
-        res.status(500).json({ error: 'Failed to generate news from Gemini.' });
+        console.error("Gemini Error:", error);
+        res.status(500).json({ error: 'Failed to generate news.' });
     }
 });
 
-/**
- * @route POST /api/preview-newsletter
- * @description Receives selected news items and returns the generated HTML for preview.
- */
 app.post('/api/preview-newsletter', async (req, res) => {
     const { selectedItems } = req.body;
-    if (!selectedItems || selectedItems.length === 0) {
-        return res.status(400).json({ error: 'At least one news item must be selected.' });
-    }
-    console.log(`Generating preview with ${selectedItems.length} items.`);
+    if (!selectedItems || selectedItems.length === 0) return res.status(400).json({ error: 'No items selected.' });
 
     try {
-        const templatePath = path.join(__dirname, 'newsletter-template.html');
-        const template = await fs.readFile(templatePath, 'utf-8');
-
-        const newsHtml = selectedItems.map((item, index) => {
-            if (index === 0) { // Main story style
-                return `<tr><td><img src="https://images.unsplash.com/photo-1677756119517-756a188d2d94?q=80&w=1470&auto=format&fit=crop" width="100%" style="max-width: 100%; height: auto; display: block;" alt="Main Story"><table border="0" cellpadding="0" cellspacing="0" width="100%"><tr><td bgcolor="#0d3d8a" style="padding: 20px; color: #ffffff; font-family: Arial, sans-serif;"><h2 style="margin: 0; font-size: 22px;">${item.headline}</h2></td></tr><tr><td style="padding: 20px; border: 1px solid #dddddd; border-top: 0; font-family: Arial, sans-serif; font-size: 15px; color: #555; line-height: 1.6;">${item.summary}</td></tr></table></td></tr><tr><td style="font-size: 0; line-height: 0;" height="25">&nbsp;</td></tr>`;
-            }
-            return `<tr><td><table border="0" cellpadding="0" cellspacing="0" width="100%"><tr><td width="60" valign="top"><img src="https://placehold.co/50x50/2563EB/FFFFFF?text=i&font=arial" width="50" height="50" style="border-radius: 50%;"></td><td valign="top" style="padding-left: 15px; font-family: Arial, sans-serif;"><h3 style="margin: 0 0 5px 0; font-size: 18px; color: #333;">${item.headline}</h3><p style="margin: 0; font-size: 14px; color: #666; line-height: 1.5;">${item.summary}</p></td></tr></table></td></tr><tr><td style="font-size: 0; line-height: 0;" height="20">&nbsp;</td></tr>`;
-        }).join('');
+        const template = await fs.readFile(path.join(__dirname, 'newsletter-template.html'), 'utf-8');
         
+        // *** UPDATED HTML GENERATION LOGIC ***
+        // This now creates HTML that matches the new template's structure.
+        const newsHtml = selectedItems.map(item => `
+            <tr>
+                <td style="padding: 25px 40px; border-bottom: 1px solid #e2e8f0;" class="content-padding">
+                    <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                        <tr>
+                            <td style="color: #2c5282; margin: 0 0 12px; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 20px; font-weight: 600; line-height: 1.3;">
+                                ${item.headline}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td style="color: #4a5568; margin: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 15px; line-height: 1.6; padding-top: 12px;">
+                                ${item.summary}
+                            </td>
+                        </tr>
+                    </table>
+                </td>
+            </tr>
+        `).join('');
+
         const finalHtml = template.replace('{{NEWS_ITEMS_PLACEHOLDER}}', newsHtml);
         res.json({ previewHtml: finalHtml });
-
     } catch (error) {
-        console.error("Error creating preview:", error);
-        res.status(500).json({ error: 'Failed to create the newsletter preview.' });
+        console.error("Preview Error:", error);
+        res.status(500).json({ error: 'Failed to create preview.' });
     }
 });
 
-
-/**
- * @route POST /api/send-newsletter
- * @description Receives the final HTML content and sends the email.
- */
 app.post('/api/send-newsletter', async (req, res) => {
-    if (!transporter) return res.status(500).json({ error: 'Email service not configured on the server.' });
-    if (!recipientEmails) return res.status(500).json({ error: 'No recipient emails configured on the server.' });
+    if (!transporter) return res.status(500).json({ error: 'Email service not configured.' });
+    
+    const { htmlContent, recipientGroup } = req.body;
+    if (!htmlContent || !recipientGroup) return res.status(400).json({ error: 'HTML content and a recipient group are required.' });
 
-    const { htmlContent } = req.body;
-    if (!htmlContent) {
-        return res.status(400).json({ error: 'HTML content is required to send an email.' });
-    }
-    console.log(`Sending final newsletter to recipients...`);
+    const recipientEmails = RECIPIENT_LISTS[recipientGroup];
+    if (!recipientEmails) return res.status(400).json({ error: 'Invalid recipient group selected.' });
 
     try {
         await transporter.sendMail({
@@ -123,18 +114,13 @@ app.post('/api/send-newsletter', async (req, res) => {
             subject: 'Your AI Weekly Roundup!',
             html: htmlContent,
         });
-
-        console.log("Newsletter sent successfully!");
-        res.json({ message: 'Newsletter sent successfully!' });
-
+        res.json({ message: `Newsletter sent successfully to the ${recipientGroup} group!` });
     } catch (error) {
-        console.error("Error sending newsletter:", error);
-        res.status(500).json({ error: 'Failed to send the newsletter.' });
+        console.error("Send Error:", error);
+        res.status(500).json({ error: 'Failed to send newsletter.' });
     }
 });
 
-
-// --- Server Start ---
 app.listen(port, () => {
     console.log(`Server listening at http://localhost:${port}`);
 });
