@@ -1,5 +1,5 @@
 // backend/server.js
-// This version is updated to match the "Creative Weekly" HTML template.
+// This version includes a more robust method for parsing the JSON response from the AI.
 
 const express = require('express');
 const cors = require('cors');
@@ -49,8 +49,6 @@ app.post('/api/generate-news', async (req, res) => {
     if (!prompt) return res.status(400).json({ error: 'Prompt is required.' });
     
     try {
-        // --- UPDATED PROMPT ---
-        // This version specifically asks for real URLs from reputable sources.
         const generationPrompt = `
             Based on the topic "${prompt}", generate a list of 5 to 7 important and current trends.
             For each trend, provide a concise headline, a short summary (1-2 sentences), and a real source URL from a reputable tech news website (like TechCrunch, Wired, The Verge, or a major news outlet).
@@ -59,11 +57,20 @@ app.post('/api/generate-news', async (req, res) => {
         `;
         const result = await model.generateContent(generationPrompt);
         const text = await result.response.text();
-        const jsonString = text.replace(/```json|```/g, '').trim();
+        
+        // --- FIX: Robust JSON extraction ---
+        // This regular expression finds the JSON array within the AI's response,
+        // even if there is extra text before or after it.
+        const jsonMatch = text.match(/\[[\s\S]*\]/);
+        if (!jsonMatch) {
+            throw new Error("No valid JSON array found in the AI's response.");
+        }
+        const jsonString = jsonMatch[0];
+        
         res.json({ newsItems: JSON.parse(jsonString) });
     } catch (error) {
-        console.error("Gemini Error:", error);
-        res.status(500).json({ error: 'Failed to generate news.' });
+        console.error("Gemini Error or JSON Parsing Error:", error);
+        res.status(500).json({ error: 'Failed to generate news. The AI response may have been invalid.' });
     }
 });
 
@@ -74,7 +81,6 @@ app.post('/api/preview-newsletter', async (req, res) => {
     try {
         const template = await fs.readFile(path.join(__dirname, 'newsletter-template.html'), 'utf-8');
         
-        // --- NEW: HTML generation logic to match the "Creative Weekly" template ---
         const newsHtml = selectedItems.map(item => {
             return `
             <!-- Single News Item -->
