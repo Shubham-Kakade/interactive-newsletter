@@ -1,5 +1,5 @@
 // backend/server.js
-// This version is updated to generate HTML matching the new CREATIVE newsletter template.
+// This version is updated to match the "Creative Weekly" HTML template.
 
 const express = require('express');
 const cors = require('cors');
@@ -20,12 +20,11 @@ const RECIPIENT_LISTS = {
     "testing-only": process.env.SMTP_USER
 };
 
-// --- Middleware ---
+// --- Middleware & Config ---
 app.use(cors());
 app.use(express.json({ limit: '5mb' }));
 app.use(express.static(path.join(__dirname, '../frontend')));
 
-// --- API Configuration ---
 const apiKey = process.env.GEMINI_API_KEY;
 const smtpHost = process.env.SMTP_HOST;
 const smtpPort = process.env.SMTP_PORT;
@@ -41,8 +40,7 @@ const transporter = (smtpHost && smtpUser && smtpPass) ? nodemailer.createTransp
 // --- API Routes ---
 
 app.get('/api/recipient-groups', (req, res) => {
-    const groupNames = Object.keys(RECIPIENT_LISTS);
-    res.json({ recipientGroups: groupNames });
+    res.json({ recipientGroups: Object.keys(RECIPIENT_LISTS) });
 });
 
 app.post('/api/generate-news', async (req, res) => {
@@ -51,7 +49,11 @@ app.post('/api/generate-news', async (req, res) => {
     if (!prompt) return res.status(400).json({ error: 'Prompt is required.' });
     
     try {
-        const generationPrompt = `Based on "${prompt}", generate 3 to 5 important trends as a JSON array of objects with "headline" and "summary" keys. The first one should be the most important.`;
+        const generationPrompt = `
+            Based on the topic "${prompt}", generate a list of 5 to 7 important and current trends.
+            For each trend, provide a concise headline, a short summary (1-2 sentences), and a plausible source URL.
+            Return the result as a valid JSON array of objects, where each object has "headline", "summary", and "sourceUrl" keys.
+        `;
         const result = await model.generateContent(generationPrompt);
         const text = await result.response.text();
         const jsonString = text.replace(/```json|```/g, '').trim();
@@ -69,42 +71,19 @@ app.post('/api/preview-newsletter', async (req, res) => {
     try {
         const template = await fs.readFile(path.join(__dirname, 'newsletter-template.html'), 'utf-8');
         
-        // ** NEW HTML GENERATION LOGIC for the creative template **
-        const newsHtml = selectedItems.map((item, index) => {
-            // First item is the large, featured story
-            if (index === 0) {
-                return `
-                <tr>
-                    <td style="padding: 0 40px 40px;" class="content-padding">
-                        <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: rgba(241, 245, 249, 0.5); border-left: 4px solid #9333ea; border-radius: 0 16px 16px 0;">
-                            <tr>
-                                <td style="padding: 30px;">
-                                    <p style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 2px; color: #9333ea; margin: 0;">Featured</p>
-                                    <h2 style="color: #1e293b; margin: 10px 0 15px; font-size: 24px; font-weight: 700; line-height: 1.2; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
-                                        ${item.headline}
-                                    </h2>
-                                    <p style="color: #475569; margin: 0; font-size: 16px; line-height: 1.6; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
-                                        ${item.summary}
-                                    </p>
-                                </td>
-                            </tr>
-                        </table>
-                    </td>
-                </tr>
-                `;
-            }
-            // Subsequent items are in a two-column layout
-            // This is a simplified version for email compatibility
+        // --- NEW: HTML generation logic to match the "Creative Weekly" template ---
+        const newsHtml = selectedItems.map(item => {
             return `
+            <!-- Single News Item -->
             <tr>
-                <td style="padding: 0 40px 30px;" class="content-padding">
-                     <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0;">
+                <td align="center" style="padding: 0 20px 30px 20px;">
+                    <table border="0" cellpadding="0" cellspacing="0" width="100%">
                         <tr>
-                            <td style="padding: 25px;">
-                                <h3 style="color: #2c5282; margin: 0 0 10px; font-size: 18px; font-weight: 600; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
-                                    ${item.headline}
-                                </h3>
-                                <p style="color: #64748b; margin: 0; font-size: 14px; line-height: 1.5; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
+                            <td align="left" style="border-bottom: 2px solid #e2e8f0; padding-bottom: 20px;">
+                                <a href="${item.sourceUrl}" target="_blank" style="text-decoration: none;">
+                                    <h3 style="margin: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 20px; font-weight: 600; color: #1e293b;">${item.headline}</h3>
+                                </a>
+                                <p style="margin: 8px 0 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 15px; color: #475569; line-height: 1.6;">
                                     ${item.summary}
                                 </p>
                             </td>
@@ -134,7 +113,7 @@ app.post('/api/send-newsletter', async (req, res) => {
 
     try {
         await transporter.sendMail({
-            from: `"Creative Weekly Digest" <${smtpUser}>`,
+            from: `"Creative Weekly" <${smtpUser}>`,
             to: recipientEmails,
             subject: 'Your Creative Weekly Digest!',
             html: htmlContent,
