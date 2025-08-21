@@ -49,9 +49,12 @@ app.post('/api/generate-news', async (req, res) => {
     if (!prompt) return res.status(400).json({ error: 'Prompt is required.' });
     
     try {
+        // --- UPDATED PROMPT ---
+        // This version specifically asks for real URLs from reputable sources.
         const generationPrompt = `
             Based on the topic "${prompt}", generate a list of 5 to 7 important and current trends.
-            For each trend, provide a concise headline, a short summary (1-2 sentences), and a plausible source URL.
+            For each trend, provide a concise headline, a short summary (1-2 sentences), and a real source URL from a reputable tech news website (like TechCrunch, Wired, The Verge, or a major news outlet).
+            The URL must be a real, accessible link.
             Return the result as a valid JSON array of objects, where each object has "headline", "summary", and "sourceUrl" keys.
         `;
         const result = await model.generateContent(generationPrompt);
