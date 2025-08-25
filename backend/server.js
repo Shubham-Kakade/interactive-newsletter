@@ -93,6 +93,9 @@ app.post('/api/preview-newsletter', async (req, res) => {
         const template = await fs.readFile(path.join(__dirname, 'newsletter-template.html'), 'utf-8');
         
         const newsHtml = selectedItems.map(item => {
+            // --- UPDATED LOGIC ---
+            // The headline is now plain text.
+            // A "Read More" link is added at the end of the summary.
             return `
             <!-- Single News Item -->
             <tr>
@@ -100,11 +103,10 @@ app.post('/api/preview-newsletter', async (req, res) => {
                     <table border="0" cellpadding="0" cellspacing="0" width="100%">
                         <tr>
                             <td align="left" style="border-bottom: 2px solid #e2e8f0; padding-bottom: 20px;">
-                                <a href="${item.sourceUrl}" target="_blank" style="text-decoration: none;">
-                                    <h3 style="margin: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 20px; font-weight: 600; color: #1e293b;">${item.headline}</h3>
-                                </a>
+                                <h3 style="margin: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 20px; font-weight: 600; color: #1e293b;">${item.headline}</h3>
                                 <p style="margin: 8px 0 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 15px; color: #475569; line-height: 1.6;">
                                     ${item.summary}
+                                    <a href="${item.sourceUrl}" target="_blank" style="text-decoration: none; color: #4A90E2; font-weight: bold;">Read More &rarr;</a>
                                 </p>
                             </td>
                         </tr>
