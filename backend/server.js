@@ -1,11 +1,11 @@
 // backend/server.js
-// This version has been updated to use the OpenAI ChatGPT API instead of Gemini.
+// This version switches back to the Gemini API and uses the new, detailed CXO prompt.
 
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs').promises;
-const OpenAI = require('openai'); // <-- NEW: Import OpenAI library
+const { GoogleGenerativeAI } = require('@google/generative-ai'); // <-- Reverted to Gemini
 const nodemailer = require('nodemailer');
 require('dotenv').config();
 
@@ -25,15 +25,15 @@ app.use(cors());
 app.use(express.json({ limit: '5mb' }));
 app.use(express.static(path.join(__dirname, '../frontend')));
 
-// --- API Configuration ---
-const apiKey = process.env.OPENAI_API_KEY; // <-- CHANGED: Use OpenAI key
+const apiKey = process.env.GEMINI_API_KEY; // <-- Reverted to Gemini
 const smtpHost = process.env.SMTP_HOST;
 const smtpPort = process.env.SMTP_PORT;
 const smtpUser = process.env.SMTP_USER;
 const smtpPass = process.env.SMTP_PASS;
 
 // --- Initialize API Clients ---
-const openai = apiKey ? new OpenAI({ apiKey }) : null; // <-- NEW: Initialize OpenAI client
+const genAI = apiKey ? new GoogleGenerativeAI(apiKey) : null; // <-- Reverted to Gemini
+const model = genAI ? genAI.getGenerativeModel({ model: "gemini-1.5-flash" }) : null;
 const transporter = (smtpHost && smtpUser && smtpPass) ? nodemailer.createTransport({
     host: smtpHost, port: smtpPort, secure: smtpPort == 465, auth: { user: smtpUser, pass: smtpPass },
 }) : null;
@@ -45,59 +45,45 @@ app.get('/api/recipient-groups', (req, res) => {
 });
 
 app.post('/api/generate-news', async (req, res) => {
-    if (!openai) return res.status(500).json({ error: 'OpenAI API not configured.' });
+    if (!genAI) return res.status(500).json({ error: 'Gemini API not configured.' });
     const { prompt } = req.body;
     if (!prompt) return res.status(400).json({ error: 'Prompt is required.' });
     
     try {
+        // --- NEW DETAILED PROMPT ---
         const generationPrompt = `
-            Based on the topic "${prompt}", generate a list of 5 to 7 of the most important and latest developments (from the past 2 weeks). 
-            These updates should be highly relevant for CXO-level leaders at a global IT services organization (similar to TCS, Infosys, Tech Mahindra, Mphasis) with a strong focus on BFSI clients in North America.
+            Generate a list of 5 to 7 of the most important developments from the past 14 days based on the topic of ${prompt}.
+            These updates are for a weekly intelligence briefing for the CXO suite of a global IT services organization whose primary market is North American Fortune 500 BFSI clients.
+            The updates must cover the intersection of AI, technology, and the financial services sector, with a strong emphasis on events originating from or directly impacting the North American market.
+            Prioritize news related to:
 
-            The updates should cover:
-            1. Major advancements in Artificial Intelligence and their enterprise adoption.  
-            2. BFSI-related technology and financial trends (banking, payments, insurance, risk, cybersecurity, regulations).  
-            3. Strategic moves by leading tech companies (Microsoft, Google, Amazon, Accenture, IBM, Infosys, TCS, Wipro, etc.) that impact IT services.  
-            4. Regulatory and compliance changes in North America affecting BFSI and IT services.  
-            5. Insights or commentary from influential leaders (CEOs, policymakers, AI experts).
-
+            1. Major AI Platform & Enterprise Moves: Announcements from Microsoft, Google Cloud, AWS, IBM, and Salesforce impacting enterprise adoption.
+            2. Competitor & Partner Strategy: Significant acquisitions, partnerships, or product launches from competitors like Accenture, Deloitte, or other major IT service providers with a footprint in North America.
+            3. North American Regulatory Landscape: New guidance or rulings on AI, data, and cybersecurity from US and Canadian bodies (e.g., SEC, Federal Reserve, FINRA, OSFI).
+            4. BFSI Client Innovation: Concrete examples of AI adoption, investment, or digital transformation by major North American banks, insurers, or financial institutions.
+            5. Influential Market Commentary: Actionable insights from CEOs of major tech or financial firms or influential analysts.
+            
+            Avoid news that is primarily of regional interest outside of North America, unless it has direct and significant global implications.
             For each update, return:
-            - "headline": A crisp headline (under 12 words).  
-            - "summary": A concise summary (1–2 sentences) highlighting strategic relevance for IT services & BFSI.  
-            - "searchQuery": A concise, keyword-based search query for Google News to find articles about this topic.
 
-            Return the result only as a valid JSON array of objects with keys: "headline", "summary", and "searchQuery".
+            - "headline": A crisp, impactful headline (under 15 words).
+            - "summary": A 2-sentence strategic summary explaining why this matters to an IT services leader serving North American BFSI clients. Focus on the opportunity or threat.
+            - "url": A direct, verifiable URL to a high-authority, English-language news source or press release.
+            
+            Return the result only as a valid JSON array of objects.
         `;
-
-        // --- NEW: OpenAI API Call ---
-        const completion = await openai.chat.completions.create({
-            model: "gpt-4o", // Or your preferred model, e.g., "gpt-3.5-turbo"
-            response_format: { type: "json_object" },
-            messages: [
-                { role: "system", content: "You are an expert research analyst who provides data in a perfect JSON format." },
-                { role: "user", content: generationPrompt }
-            ]
-        });
-
-        const text = completion.choices[0].message.content;
+        const result = await model.generateContent(generationPrompt);
+        const text = await result.response.text();
         
-        // The robust extraction is less necessary with OpenAI's JSON mode, but good to have.
         const jsonMatch = text.match(/\[[\s\S]*\]/);
         if (!jsonMatch) {
-            // Sometimes OpenAI wraps the array in a parent object, let's find it.
-            const arrayInData = JSON.parse(text);
-            const key = Object.keys(arrayInData)[0];
-            if (Array.isArray(arrayInData[key])) {
-                 res.json({ newsItems: arrayInData[key] });
-                 return;
-            }
             throw new Error("No valid JSON array found in the AI's response.");
         }
         const jsonString = jsonMatch[0];
         
         res.json({ newsItems: JSON.parse(jsonString) });
     } catch (error) {
-        console.error("OpenAI Error or JSON Parsing Error:", error);
+        console.error("Gemini Error or JSON Parsing Error:", error);
         res.status(500).json({ error: 'Failed to generate news. The AI response may have been invalid.' });
     }
 });
@@ -110,8 +96,7 @@ app.post('/api/preview-newsletter', async (req, res) => {
         const template = await fs.readFile(path.join(__dirname, 'newsletter-template.html'), 'utf-8');
         
         const newsHtml = selectedItems.map(item => {
-            const googleNewsUrl = `https://news.google.com/search?q=${encodeURIComponent(item.searchQuery)}`;
-            
+            // Updated to use "url" key from the new prompt
             return `
             <!-- Single News Item -->
             <tr>
@@ -122,7 +107,7 @@ app.post('/api/preview-newsletter', async (req, res) => {
                                 <h3 style="margin: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 20px; font-weight: 600; color: #1e293b;">${item.headline}</h3>
                                 <p style="margin: 8px 0 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 15px; color: #475569; line-height: 1.6;">
                                     ${item.summary}
-                                    <a href="${googleNewsUrl}" target="_blank" style="text-decoration: none; color: #4A90E2; font-weight: bold;">Read More &rarr;</a>
+                                    <a href="${item.url}" target="_blank" style="text-decoration: none; color: #4A90E2; font-weight: bold;">Read More &rarr;</a>
                                 </p>
                             </td>
                         </tr>
