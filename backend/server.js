@@ -50,10 +50,23 @@ app.post('/api/generate-news', async (req, res) => {
     
     try {
         const generationPrompt = `
-            Based on the topic "${prompt}", generate a list of 5 to 7 important and current trends.
-            For each trend, provide a concise headline, a short summary (1-2 sentences), and a real source URL from a reputable tech news website (like TechCrunch, Wired, The Verge, or a major news outlet).
-            The URL must be a real, accessible link.
-            Return the result as a valid JSON array of objects, where each object has "headline", "summary", and "sourceUrl" keys.
+            Based on the topic "${prompt}", generate a list of 5 to 7 of the most important and latest developments (from the past 2 weeks). 
+These updates should be highly relevant for CXO-level leaders at a global IT services organization (similar to TCS, Infosys, Tech Mahindra, Mphasis) with a strong focus on BFSI clients in North America.
+
+The updates should cover:
+1. Major advancements in Artificial Intelligence and their enterprise adoption.  
+2. BFSI-related technology and financial trends (banking, payments, insurance, risk, cybersecurity, regulations).  
+3. Strategic moves by leading tech companies (Microsoft, Google, Amazon, Accenture, IBM, Infosys, TCS, Wipro, etc.) that impact IT services.  
+4. Regulatory and compliance changes in North America affecting BFSI and IT services.  
+5. Insights or commentary from influential leaders (CEOs, policymakers, AI experts).
+
+For each update, return:
+- "headline": A crisp headline (under 12 words).  
+- "summary": A concise summary (1–2 sentences) highlighting strategic relevance for IT services & BFSI.  
+- "sourceUrl": A valid, openable URL from a reputable tech/financial news site (e.g., TechCrunch, Wired, WSJ, FT, Reuters, Bloomberg, The Verge).
+
+Return the result **only** as a valid JSON array of objects with keys: "headline", "summary", and "sourceUrl".
+
         `;
         const result = await model.generateContent(generationPrompt);
         const text = await result.response.text();
