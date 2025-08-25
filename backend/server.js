@@ -1,5 +1,5 @@
 // backend/server.js
-// This version includes a more robust method for parsing the JSON response from the AI.
+// This version includes the detailed, CXO-targeted prompt for the AI.
 
 const express = require('express');
 const cors = require('cors');
@@ -49,31 +49,29 @@ app.post('/api/generate-news', async (req, res) => {
     if (!prompt) return res.status(400).json({ error: 'Prompt is required.' });
     
     try {
+        // --- DETAILED CXO PROMPT ---
         const generationPrompt = `
             Based on the topic "${prompt}", generate a list of 5 to 7 of the most important and latest developments (from the past 2 weeks). 
-These updates should be highly relevant for CXO-level leaders at a global IT services organization (similar to TCS, Infosys, Tech Mahindra, Mphasis) with a strong focus on BFSI clients in North America.
+            These updates should be highly relevant for CXO-level leaders at a global IT services organization (similar to TCS, Infosys, Tech Mahindra, Mphasis) with a strong focus on BFSI clients in North America.
 
-The updates should cover:
-1. Major advancements in Artificial Intelligence and their enterprise adoption.  
-2. BFSI-related technology and financial trends (banking, payments, insurance, risk, cybersecurity, regulations).  
-3. Strategic moves by leading tech companies (Microsoft, Google, Amazon, Accenture, IBM, Infosys, TCS, Wipro, etc.) that impact IT services.  
-4. Regulatory and compliance changes in North America affecting BFSI and IT services.  
-5. Insights or commentary from influential leaders (CEOs, policymakers, AI experts).
+            The updates should cover:
+            1. Major advancements in Artificial Intelligence and their enterprise adoption.  
+            2. BFSI-related technology and financial trends (banking, payments, insurance, risk, cybersecurity, regulations).  
+            3. Strategic moves by leading tech companies (Microsoft, Google, Amazon, Accenture, IBM, Infosys, TCS, Wipro, etc.) that impact IT services.  
+            4. Regulatory and compliance changes in North America affecting BFSI and IT services.  
+            5. Insights or commentary from influential leaders (CEOs, policymakers, AI experts).
 
-For each update, return:
-- "headline": A crisp headline (under 12 words).  
-- "summary": A concise summary (1–2 sentences) highlighting strategic relevance for IT services & BFSI.  
-- "sourceUrl": A valid, openable URL from a reputable tech/financial news site (e.g., TechCrunch, Wired, WSJ, FT, Reuters, Bloomberg, The Verge).
+            For each update, return:
+            - "headline": A crisp headline (under 12 words).  
+            - "summary": A concise summary (1–2 sentences) highlighting strategic relevance for IT services & BFSI.  
+            - "sourceUrl": A valid, openable URL from a reputable tech/financial news site (e.g., TechCrunch, Wired, WSJ, FT, Reuters, Bloomberg, The Verge).
 
-Return the result **only** as a valid JSON array of objects with keys: "headline", "summary", and "sourceUrl".
-
+            Return the result only as a valid JSON array of objects with keys: "headline", "summary", and "sourceUrl".
         `;
         const result = await model.generateContent(generationPrompt);
         const text = await result.response.text();
         
-        // --- FIX: Robust JSON extraction ---
-        // This regular expression finds the JSON array within the AI's response,
-        // even if there is extra text before or after it.
+        // --- Robust JSON extraction ---
         const jsonMatch = text.match(/\[[\s\S]*\]/);
         if (!jsonMatch) {
             throw new Error("No valid JSON array found in the AI's response.");
