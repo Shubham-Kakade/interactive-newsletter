@@ -49,7 +49,7 @@ app.post('/api/generate-news', async (req, res) => {
     if (!prompt) return res.status(400).json({ error: 'Prompt is required.' });
     
     try {
-        // --- DETAILED CXO PROMPT ---
+        // --- UPDATED PROMPT: Asks for a search query instead of a direct URL ---
         const generationPrompt = `
             Based on the topic "${prompt}", generate a list of 5 to 7 of the most important and latest developments (from the past 2 weeks). 
             These updates should be highly relevant for CXO-level leaders at a global IT services organization (similar to TCS, Infosys, Tech Mahindra, Mphasis) with a strong focus on BFSI clients in North America.
@@ -64,9 +64,9 @@ app.post('/api/generate-news', async (req, res) => {
             For each update, return:
             - "headline": A crisp headline (under 12 words).  
             - "summary": A concise summary (1–2 sentences) highlighting strategic relevance for IT services & BFSI.  
-            - "sourceUrl": A valid, openable URL from a reputable tech/financial news site (e.g., TechCrunch, Wired, WSJ, FT, Reuters, Bloomberg, The Verge).
+            - "searchQuery": A concise, keyword-based search query for Google News to find articles about this topic.
 
-            Return the result only as a valid JSON array of objects with keys: "headline", "summary", and "sourceUrl".
+            Return the result only as a valid JSON array of objects with keys: "headline", "summary", and "searchQuery".
         `;
         const result = await model.generateContent(generationPrompt);
         const text = await result.response.text();
@@ -93,9 +93,9 @@ app.post('/api/preview-newsletter', async (req, res) => {
         const template = await fs.readFile(path.join(__dirname, 'newsletter-template.html'), 'utf-8');
         
         const newsHtml = selectedItems.map(item => {
-            // --- UPDATED LOGIC ---
-            // The headline is now plain text.
-            // A "Read More" link is added at the end of the summary.
+            // --- UPDATED LOGIC: Constructs a reliable Google News search link ---
+            const googleNewsUrl = `https://news.google.com/search?q=${encodeURIComponent(item.searchQuery)}`;
+            
             return `
             <!-- Single News Item -->
             <tr>
@@ -106,7 +106,7 @@ app.post('/api/preview-newsletter', async (req, res) => {
                                 <h3 style="margin: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 20px; font-weight: 600; color: #1e293b;">${item.headline}</h3>
                                 <p style="margin: 8px 0 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 15px; color: #475569; line-height: 1.6;">
                                     ${item.summary}
-                                    <a href="${item.sourceUrl}" target="_blank" style="text-decoration: none; color: #4A90E2; font-weight: bold;">Read More &rarr;</a>
+                                    <a href="${googleNewsUrl}" target="_blank" style="text-decoration: none; color: #4A90E2; font-weight: bold;">Read More &rarr;</a>
                                 </p>
                             </td>
                         </tr>
