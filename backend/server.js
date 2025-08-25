@@ -1,11 +1,11 @@
 // backend/server.js
-// This version includes the detailed, CXO-targeted prompt for the AI.
+// This version has been updated to use the OpenAI ChatGPT API instead of Gemini.
 
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs').promises;
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+const OpenAI = require('openai'); // <-- NEW: Import OpenAI library
 const nodemailer = require('nodemailer');
 require('dotenv').config();
 
@@ -25,14 +25,15 @@ app.use(cors());
 app.use(express.json({ limit: '5mb' }));
 app.use(express.static(path.join(__dirname, '../frontend')));
 
-const apiKey = process.env.GEMINI_API_KEY;
+// --- API Configuration ---
+const apiKey = process.env.OPENAI_API_KEY; // <-- CHANGED: Use OpenAI key
 const smtpHost = process.env.SMTP_HOST;
 const smtpPort = process.env.SMTP_PORT;
 const smtpUser = process.env.SMTP_USER;
 const smtpPass = process.env.SMTP_PASS;
 
-const genAI = apiKey ? new GoogleGenerativeAI(apiKey) : null;
-const model = genAI ? genAI.getGenerativeModel({ model: "gemini-1.5-flash" }) : null;
+// --- Initialize API Clients ---
+const openai = apiKey ? new OpenAI({ apiKey }) : null; // <-- NEW: Initialize OpenAI client
 const transporter = (smtpHost && smtpUser && smtpPass) ? nodemailer.createTransport({
     host: smtpHost, port: smtpPort, secure: smtpPort == 465, auth: { user: smtpUser, pass: smtpPass },
 }) : null;
@@ -44,12 +45,11 @@ app.get('/api/recipient-groups', (req, res) => {
 });
 
 app.post('/api/generate-news', async (req, res) => {
-    if (!genAI) return res.status(500).json({ error: 'Gemini API not configured.' });
+    if (!openai) return res.status(500).json({ error: 'OpenAI API not configured.' });
     const { prompt } = req.body;
     if (!prompt) return res.status(400).json({ error: 'Prompt is required.' });
     
     try {
-        // --- UPDATED PROMPT: Asks for a search query instead of a direct URL ---
         const generationPrompt = `
             Based on the topic "${prompt}", generate a list of 5 to 7 of the most important and latest developments (from the past 2 weeks). 
             These updates should be highly relevant for CXO-level leaders at a global IT services organization (similar to TCS, Infosys, Tech Mahindra, Mphasis) with a strong focus on BFSI clients in North America.
@@ -68,19 +68,36 @@ app.post('/api/generate-news', async (req, res) => {
 
             Return the result only as a valid JSON array of objects with keys: "headline", "summary", and "searchQuery".
         `;
-        const result = await model.generateContent(generationPrompt);
-        const text = await result.response.text();
+
+        // --- NEW: OpenAI API Call ---
+        const completion = await openai.chat.completions.create({
+            model: "gpt-4o", // Or your preferred model, e.g., "gpt-3.5-turbo"
+            response_format: { type: "json_object" },
+            messages: [
+                { role: "system", content: "You are an expert research analyst who provides data in a perfect JSON format." },
+                { role: "user", content: generationPrompt }
+            ]
+        });
+
+        const text = completion.choices[0].message.content;
         
-        // --- Robust JSON extraction ---
+        // The robust extraction is less necessary with OpenAI's JSON mode, but good to have.
         const jsonMatch = text.match(/\[[\s\S]*\]/);
         if (!jsonMatch) {
+            // Sometimes OpenAI wraps the array in a parent object, let's find it.
+            const arrayInData = JSON.parse(text);
+            const key = Object.keys(arrayInData)[0];
+            if (Array.isArray(arrayInData[key])) {
+                 res.json({ newsItems: arrayInData[key] });
+                 return;
+            }
             throw new Error("No valid JSON array found in the AI's response.");
         }
         const jsonString = jsonMatch[0];
         
         res.json({ newsItems: JSON.parse(jsonString) });
     } catch (error) {
-        console.error("Gemini Error or JSON Parsing Error:", error);
+        console.error("OpenAI Error or JSON Parsing Error:", error);
         res.status(500).json({ error: 'Failed to generate news. The AI response may have been invalid.' });
     }
 });
@@ -93,7 +110,6 @@ app.post('/api/preview-newsletter', async (req, res) => {
         const template = await fs.readFile(path.join(__dirname, 'newsletter-template.html'), 'utf-8');
         
         const newsHtml = selectedItems.map(item => {
-            // --- UPDATED LOGIC: Constructs a reliable Google News search link ---
             const googleNewsUrl = `https://news.google.com/search?q=${encodeURIComponent(item.searchQuery)}`;
             
             return `
