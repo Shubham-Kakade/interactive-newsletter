@@ -1,11 +1,11 @@
 // backend/server.js
-// This version switches back to the Gemini API and uses the new, detailed CXO prompt.
+// This version uses the prompt that asks for a direct, verifiable URL.
 
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs').promises;
-const { GoogleGenerativeAI } = require('@google/generative-ai'); // <-- Reverted to Gemini
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 const nodemailer = require('nodemailer');
 require('dotenv').config();
 
@@ -25,14 +25,13 @@ app.use(cors());
 app.use(express.json({ limit: '5mb' }));
 app.use(express.static(path.join(__dirname, '../frontend')));
 
-const apiKey = process.env.GEMINI_API_KEY; // <-- Reverted to Gemini
+const apiKey = process.env.GEMINI_API_KEY;
 const smtpHost = process.env.SMTP_HOST;
 const smtpPort = process.env.SMTP_PORT;
 const smtpUser = process.env.SMTP_USER;
 const smtpPass = process.env.SMTP_PASS;
 
-// --- Initialize API Clients ---
-const genAI = apiKey ? new GoogleGenerativeAI(apiKey) : null; // <-- Reverted to Gemini
+const genAI = apiKey ? new GoogleGenerativeAI(apiKey) : null;
 const model = genAI ? genAI.getGenerativeModel({ model: "gemini-1.5-flash" }) : null;
 const transporter = (smtpHost && smtpUser && smtpPass) ? nodemailer.createTransport({
     host: smtpHost, port: smtpPort, secure: smtpPort == 465, auth: { user: smtpUser, pass: smtpPass },
@@ -49,10 +48,11 @@ app.post('/api/generate-news', async (req, res) => {
     const { prompt } = req.body;
     if (!prompt) return res.status(400).json({ error: 'Prompt is required.' });
     
+    let text = ''; // Declare text here to access it in the catch block
     try {
-        // --- NEW DETAILED PROMPT ---
+        // --- UPDATED PROMPT: Asks for a direct URL ---
         const generationPrompt = `
-            Generate a list of 5 to 7 of the most important developments from the past 14 days based on the topic of ${prompt}.
+            Generate a list of 5 to 7 of the most important developments from the past 14 days based on the topic of AI trends.
             These updates are for a weekly intelligence briefing for the CXO suite of a global IT services organization whose primary market is North American Fortune 500 BFSI clients.
             The updates must cover the intersection of AI, technology, and the financial services sector, with a strong emphasis on events originating from or directly impacting the North American market.
             Prioritize news related to:
@@ -70,11 +70,12 @@ app.post('/api/generate-news', async (req, res) => {
             - "summary": A 2-sentence strategic summary explaining why this matters to an IT services leader serving North American BFSI clients. Focus on the opportunity or threat.
             - "url": A direct, verifiable URL to a high-authority, English-language news source or press release.
             
-            Return the result only as a valid JSON array of objects.
+            Return the result only as a valid JSON array of objects with keys: "headline", "summary", and "url".
         `;
         const result = await model.generateContent(generationPrompt);
-        const text = await result.response.text();
+        text = await result.response.text();
         
+        // --- Robust JSON extraction ---
         const jsonMatch = text.match(/\[[\s\S]*\]/);
         if (!jsonMatch) {
             throw new Error("No valid JSON array found in the AI's response.");
@@ -84,6 +85,12 @@ app.post('/api/generate-news', async (req, res) => {
         res.json({ newsItems: JSON.parse(jsonString) });
     } catch (error) {
         console.error("Gemini Error or JSON Parsing Error:", error);
+        // Log the raw text from the AI for better debugging
+        if (text) {
+            console.error("--- RAW AI RESPONSE THAT CAUSED ERROR ---");
+            console.error(text);
+            console.error("---------------------------------------");
+        }
         res.status(500).json({ error: 'Failed to generate news. The AI response may have been invalid.' });
     }
 });
@@ -96,7 +103,7 @@ app.post('/api/preview-newsletter', async (req, res) => {
         const template = await fs.readFile(path.join(__dirname, 'newsletter-template.html'), 'utf-8');
         
         const newsHtml = selectedItems.map(item => {
-            // Updated to use "url" key from the new prompt
+            // --- UPDATED LOGIC: Uses the "url" key from the AI's response ---
             return `
             <!-- Single News Item -->
             <tr>
@@ -151,3 +158,4 @@ app.post('/api/send-newsletter', async (req, res) => {
 app.listen(port, () => {
     console.log(`Server listening at http://localhost:${port}`);
 });
+
