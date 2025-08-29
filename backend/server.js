@@ -20,6 +20,9 @@ const RECIPIENT_LISTS = {
     "testing-only": process.env.SMTP_USER
 };
 
+// --- Helper for exponential backoff ---
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
 // --- Middleware & Config ---
 app.use(cors());
 app.use(express.json({ limit: '5mb' }));
@@ -74,10 +77,30 @@ app.post('/api/generate-news', async (req, res) => {
         `;
         
         // --- NEW: Enable Google Search Grounding to get real URLs ---
-        const result = await model.generateContent({
-            contents: [{ parts: [{ text: generationPrompt }] }],
-            tools: [{ "google_search": {} }],
-        });
+        let result;
+        const maxRetries = 3;
+        let attempt = 0;
+
+        while (attempt < maxRetries) {
+            try {
+                result = await model.generateContent({
+                    contents: [{ parts: [{ text: generationPrompt }] }],
+                    tools: [{ "google_search": {} }],
+                });
+                break; // Success, exit loop
+            } catch (error) {
+                // Check if it's a rate limit error (often status 429)
+                if (error.toString().includes('429')) {
+                    attempt++;
+                    if (attempt >= maxRetries) throw error; // All retries failed
+                    const delay = Math.pow(2, attempt) * 1000; // 2s, 4s, 8s
+                    console.log(`Rate limit hit. Retrying in ${delay / 1000} seconds...`);
+                    await sleep(delay);
+                } else {
+                    throw error; // Not a rate limit error, fail immediately
+                }
+            }
+        }
 
         text = await result.response.text();
         
@@ -164,5 +187,6 @@ app.post('/api/send-newsletter', async (req, res) => {
 app.listen(port, () => {
     console.log(`Server listening at http://localhost:${port}`);
 });
+
 
 
