@@ -72,7 +72,13 @@ app.post('/api/generate-news', async (req, res) => {
             
             Return the result only as a valid JSON array of objects with keys: "headline", "summary", and "url".
         `;
-        const result = await model.generateContent(generationPrompt);
+        
+        // --- NEW: Enable Google Search Grounding to get real URLs ---
+        const result = await model.generateContent({
+            contents: [{ parts: [{ text: generationPrompt }] }],
+            tools: [{ "google_search": {} }],
+        });
+
         text = await result.response.text();
         
         // --- Robust JSON extraction ---
@@ -158,4 +164,5 @@ app.post('/api/send-newsletter', async (req, res) => {
 app.listen(port, () => {
     console.log(`Server listening at http://localhost:${port}`);
 });
+
 
